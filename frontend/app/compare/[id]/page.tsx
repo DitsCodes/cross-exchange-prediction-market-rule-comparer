@@ -1,9 +1,11 @@
 "use client";
 
+import Link from "next/link";
 import { use, useEffect, useRef, useState } from "react";
 import { AgentTimeline } from "@/components/AgentTimeline";
 import { MarketCard } from "@/components/MarketCard";
 import { RiskMatrix } from "@/components/RiskMatrix";
+import { RiskMatrixSkeleton } from "@/components/RiskMatrixSkeleton";
 import { getCompare, streamCompareUrl } from "@/lib/api";
 import type { CompareResult, RiskMatrix as RiskMatrixType, StreamEvent } from "@/lib/types";
 
@@ -73,27 +75,44 @@ export default function ComparePage({
   }, [id]);
 
   const input = matrix?.input ?? null;
+  const heading = input?.title || "Comparison";
+  const isWorking = status === "pending" || status === "running";
 
   return (
-    <div className="space-y-8">
-      <div className="flex items-center justify-between">
-        <h1 className="text-xl font-semibold tracking-tight">Comparison</h1>
-        <span className="muted text-xs">id: {id}</span>
+    <div className="space-y-10">
+      <div className="space-y-3">
+        <Link
+          href="/"
+          className="muted focus-ring inline-flex items-center gap-1 text-sm hover:text-white"
+        >
+          <span aria-hidden>←</span> New comparison
+        </Link>
+        <div className="flex flex-wrap items-baseline justify-between gap-3">
+          <h1 className="font-serif text-3xl leading-tight tracking-tight">
+            {heading}
+          </h1>
+          <span className="muted tabular text-[11px] uppercase tracking-wide">
+            run · {id.slice(0, 8)}
+          </span>
+        </div>
       </div>
 
       <AgentTimeline events={events} />
 
       {error ? (
-        <div className="panel border-red-500/40 bg-red-500/10 p-4 text-sm text-red-300">
-          {error}
+        <div role="alert" className="alert-error">
+          <div>
+            <div className="font-semibold text-[#fca5a5]">
+              Couldn’t complete this comparison
+            </div>
+            <div className="mt-0.5 text-[var(--text-dim)]">{error}</div>
+          </div>
         </div>
       ) : null}
 
       {input ? (
         <section>
-          <h2 className="mb-3 text-sm font-semibold uppercase tracking-wide muted">
-            Input market
-          </h2>
+          <SectionHeader>Input market</SectionHeader>
           <MarketCard
             exchange={input.exchange}
             title={input.title}
@@ -105,19 +124,28 @@ export default function ComparePage({
       ) : null}
 
       <section>
-        <h2 className="mb-3 text-sm font-semibold uppercase tracking-wide muted">
-          Structural risk matrix
-        </h2>
+        <SectionHeader>Structural risk matrix</SectionHeader>
         {matrix ? (
           <RiskMatrix rows={matrix.rows} />
+        ) : isWorking ? (
+          <RiskMatrixSkeleton />
         ) : (
-          <div className="panel p-6 muted">
-            {status === "running" || status === "pending"
-              ? "Running agents…"
-              : "No results yet."}
+          <div className="panel p-8 text-center">
+            <div className="muted text-sm">No results yet.</div>
+            <Link href="/" className="btn-secondary focus-ring mt-4 inline-flex">
+              Start a new comparison
+            </Link>
           </div>
         )}
       </section>
     </div>
+  );
+}
+
+function SectionHeader({ children }: { children: React.ReactNode }) {
+  return (
+    <h2 className="muted mb-3 text-xs font-semibold uppercase tracking-[0.18em]">
+      {children}
+    </h2>
   );
 }

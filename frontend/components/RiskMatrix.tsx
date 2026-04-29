@@ -20,8 +20,8 @@ export function RiskMatrix({ rows }: { rows: RiskRow[] }) {
     );
   }
   return (
-    <div className="panel overflow-hidden">
-      <div className="grid grid-cols-[2fr,repeat(4,minmax(0,1.1fr)),0.9fr] gap-px bg-[var(--border)]">
+    <div className="panel overflow-x-auto">
+      <div className="grid min-w-[820px] grid-cols-[2fr,repeat(4,minmax(0,1.1fr)),0.9fr] gap-px bg-[var(--border)]">
         <Header>Candidate</Header>
         {DIMENSIONS.map((d) => (
           <Header key={d.key}>{d.label}</Header>
@@ -45,12 +45,22 @@ function Header({ children }: { children: React.ReactNode }) {
 
 function Row({ row }: { row: RiskRow }) {
   const [open, setOpen] = useState(false);
+  const toggle = () => setOpen((v) => !v);
+  const onKey = (e: React.KeyboardEvent) => {
+    if (e.key === "Enter" || e.key === " ") {
+      e.preventDefault();
+      toggle();
+    }
+  };
   return (
     <>
-      <button
-        type="button"
-        onClick={() => setOpen((v) => !v)}
-        className="col-span-full grid grid-cols-[2fr,repeat(4,minmax(0,1.1fr)),0.9fr] gap-px text-left bg-[var(--border)]"
+      <div
+        role="button"
+        tabIndex={0}
+        aria-expanded={open}
+        onClick={toggle}
+        onKeyDown={onKey}
+        className="focus-ring col-span-full grid cursor-pointer grid-cols-[2fr,repeat(4,minmax(0,1.1fr)),0.9fr] gap-px bg-[var(--border)] text-left transition-colors hover:bg-[var(--panel-2)]"
       >
         <CandidateCell row={row} />
         {DIMENSIONS.map((d) => {
@@ -65,34 +75,40 @@ function Row({ row }: { row: RiskRow }) {
           return (
             <div key={d.key} className="bg-[var(--panel)] px-3 py-3">
               <DivergenceBadge level={dim.divergence} />
-              <div className="mt-1 text-xs leading-snug">{dim.note}</div>
+              <div className="muted mt-1.5 text-xs leading-snug">{dim.note}</div>
             </div>
           );
         })}
-        <div className="bg-[var(--panel)] px-3 py-3">
+        <div className="flex items-center justify-between bg-[var(--panel)] px-3 py-3">
           <ArbitrageBadge flag={row.arbitrage_flag} />
+          <span
+            aria-hidden
+            className={`muted text-xs transition-transform ${open ? "rotate-180" : ""}`}
+          >
+            ▾
+          </span>
         </div>
-      </button>
+      </div>
       {open ? (
-        <div className="col-span-full bg-[var(--panel-2)] px-5 py-4">
-          <div className="muted mb-2 text-[11px] uppercase tracking-wide">
+        <div className="col-span-full bg-[var(--panel-2)] px-6 py-5">
+          <div className="muted mb-2 text-[11px] font-semibold uppercase tracking-[0.18em]">
             Rationale
           </div>
-          <p className="mb-4 text-sm">{row.rationale}</p>
+          <p className="mb-5 text-sm leading-relaxed">{row.rationale}</p>
           <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
             {DIMENSIONS.map((d) => {
               const dim = row.dimensions[d.key];
               if (!dim) return null;
               return (
-                <div key={d.key} className="panel-2 p-3">
-                  <div className="mb-1 flex items-center justify-between">
+                <div key={d.key} className="panel-2 p-4">
+                  <div className="mb-2 flex items-center justify-between gap-2">
                     <div className="text-xs font-semibold">{d.label}</div>
                     <DivergenceBadge level={dim.divergence} />
                   </div>
                   <DimRow label="Input" value={dim.input} />
                   <DimRow label="Candidate" value={dim.candidate} />
                   {dim.note ? (
-                    <p className="muted mt-2 text-xs italic">{dim.note}</p>
+                    <p className="muted mt-2 text-xs italic leading-snug">{dim.note}</p>
                   ) : null}
                 </div>
               );
@@ -107,17 +123,18 @@ function Row({ row }: { row: RiskRow }) {
 function CandidateCell({ row }: { row: RiskRow }) {
   return (
     <div className="bg-[var(--panel)] px-3 py-3">
-      <div className="muted text-[10px] uppercase tracking-wide">
+      <div className="muted tabular text-[10px] font-semibold uppercase tracking-[0.14em]">
         {row.candidate.exchange} · sim {Math.round(row.candidate.similarity * 100)}%
       </div>
-      <div className="text-sm font-medium leading-snug">
+      <div className="mt-1 text-sm font-medium leading-snug">
         {row.candidate.url ? (
           <a
-            className="hover:underline"
+            className="focus-ring hover:underline"
             href={row.candidate.url}
             rel="noreferrer"
             target="_blank"
             onClick={(e) => e.stopPropagation()}
+            onKeyDown={(e) => e.stopPropagation()}
           >
             {row.candidate.title}
           </a>
