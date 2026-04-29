@@ -2,49 +2,70 @@ import { UrlInput } from "@/components/UrlInput";
 
 export default function HomePage() {
   return (
-    <div className="space-y-10">
-      <section className="panel p-8">
-        <h1 className="text-2xl font-semibold tracking-tight">
-          Compare prediction market settlement rules across exchanges.
-        </h1>
-        <p className="muted mt-3 max-w-2xl text-sm leading-relaxed">
-          Paste a Polymarket or Kalshi URL. RuleC fetches the market via API, retrieves
-          similar markets on the opposite exchange from a fresh embedding catalog, and
-          generates a Structural Risk Matrix that highlights divergences in resolution
-          source, dead-heat tie-breaking rules, and expiration timestamps.
+    <div className="space-y-16">
+      <section className="max-w-3xl">
+        <p className="muted mb-4 text-xs font-semibold uppercase tracking-[0.18em]">
+          Cross-exchange rules diff
         </p>
-        <div className="mt-6">
+        <h1 className="font-serif text-4xl leading-[1.1] tracking-tight sm:text-5xl">
+          Compare prediction market settlement rules
+          <br className="hidden sm:block" />
+          <span className="text-[var(--accent)]"> across exchanges.</span>
+        </h1>
+        <p className="muted mt-5 max-w-xl text-base leading-relaxed">
+          Paste a Polymarket or Kalshi URL. RuleC retrieves similar markets on the
+          opposite exchange and surfaces divergences in resolution source,
+          tie-breaking rules, and expiration timestamps.
+        </p>
+        <div className="mt-8">
           <UrlInput />
         </div>
       </section>
 
-      <section className="grid grid-cols-1 gap-4 md:grid-cols-3">
-        <Step
-          n="1"
-          title="Fetch"
-          body="Polymarket Gamma + Kalshi v2 APIs return the canonical market metadata."
-        />
-        <Step
-          n="2"
-          title="Retrieve"
-          body="Voyage AI embeddings + pgvector cosine search find cross-exchange neighbors above the similarity threshold."
-        />
-        <Step
-          n="3"
-          title="Synthesize"
-          body="A LangGraph supervisor of Claude sub-agents extracts structured rules and scores per-dimension divergences."
-        />
+      <section
+        aria-label="How it works"
+        className="border-t border-[var(--border)] pt-10"
+      >
+        <ol className="grid grid-cols-1 gap-x-10 gap-y-6 text-sm sm:grid-cols-3">
+          <PipelineStep
+            n="01"
+            title="Fetch"
+            body="Polymarket Gamma + Kalshi v2 return the canonical metadata."
+          />
+          <PipelineStep
+            n="02"
+            title="Retrieve"
+            body="Voyage embeddings + pgvector search find cross-exchange neighbors."
+          />
+          <PipelineStep
+            n="03"
+            title="Synthesize"
+            body="A LangGraph supervisor extracts rules and scores divergences."
+          />
+        </ol>
       </section>
     </div>
   );
 }
 
-function Step({ n, title, body }: { n: string; title: string; body: string }) {
+function PipelineStep({
+  n,
+  title,
+  body,
+}: {
+  n: string;
+  title: string;
+  body: string;
+}) {
   return (
-    <div className="panel p-5">
-      <div className="muted mb-1 text-xs uppercase tracking-wide">Step {n}</div>
-      <div className="mb-2 text-base font-semibold">{title}</div>
-      <p className="muted text-sm leading-relaxed">{body}</p>
-    </div>
+    <li className="flex gap-4">
+      <span className="tabular muted shrink-0 text-xs font-semibold tracking-wider">
+        {n}
+      </span>
+      <div>
+        <div className="text-sm font-semibold text-[var(--text)]">{title}</div>
+        <p className="muted mt-1 leading-relaxed">{body}</p>
+      </div>
+    </li>
   );
 }

@@ -5,8 +5,14 @@ import { useState } from "react";
 import { createCompare } from "@/lib/api";
 
 const EXAMPLES = [
-  "https://polymarket.com/event/will-bitcoin-reach-100k-by-end-of-2026",
-  "https://kalshi.com/markets/kxprez/2028-presidential-election",
+  {
+    label: "Polymarket",
+    url: "https://polymarket.com/event/will-bitcoin-reach-100k-by-end-of-2026",
+  },
+  {
+    label: "Kalshi",
+    url: "https://kalshi.com/markets/kxprez/2028-presidential-election",
+  },
 ];
 
 export function UrlInput() {
@@ -30,38 +36,57 @@ export function UrlInput() {
 
   return (
     <form onSubmit={submit} className="flex flex-col gap-3">
-      <label className="text-sm font-medium" htmlFor="market-url">
+      <label
+        className="text-xs font-medium uppercase tracking-wide text-[var(--text-dim)]"
+        htmlFor="market-url"
+      >
         Market URL
       </label>
-      <div className="flex gap-2">
+      <div className="flex flex-col gap-2 sm:flex-row">
         <input
           id="market-url"
           name="market-url"
           className="input"
+          type="url"
+          inputMode="url"
+          autoComplete="off"
+          autoCorrect="off"
+          autoCapitalize="off"
+          spellCheck={false}
           placeholder="https://polymarket.com/... or https://kalshi.com/..."
           value={url}
           onChange={(e) => setUrl(e.target.value)}
           required
           autoFocus
+          aria-describedby="url-examples"
         />
-        <button className="btn-primary whitespace-nowrap" type="submit" disabled={busy || !url}>
-          {busy ? "Analyzing..." : "Compare"}
+        <button
+          className="btn-primary whitespace-nowrap sm:px-6"
+          type="submit"
+          disabled={busy || !url}
+        >
+          {busy ? "Analyzing…" : "Compare"}
         </button>
       </div>
-      <div className="muted text-xs">
-        Try:
+      <div id="url-examples" className="flex flex-wrap items-center gap-2 pt-1">
+        <span className="muted text-xs">Try an example:</span>
         {EXAMPLES.map((ex) => (
           <button
-            key={ex}
+            key={ex.url}
             type="button"
-            className="ml-2 underline decoration-dotted hover:text-white"
-            onClick={() => setUrl(ex)}
+            className="btn-secondary focus-ring"
+            onClick={() => setUrl(ex.url)}
           >
-            {new URL(ex).hostname}
+            {ex.label}
           </button>
         ))}
       </div>
-      {error ? <div className="text-sm text-risk-high">{error}</div> : null}
+      {error ? (
+        <div role="alert" className="alert-error mt-1">
+          <span className="font-semibold">Couldn’t start comparison:</span>
+          <span>{error}</span>
+        </div>
+      ) : null}
     </form>
   );
 }
