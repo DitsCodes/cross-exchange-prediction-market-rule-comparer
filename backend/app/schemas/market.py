@@ -27,14 +27,6 @@ class NormalizedMarket(BaseModel):
     status: str = "unknown"
     url: str | None = None
 
-    def embedding_text(self) -> str:
-        """Concatenated text used for similarity embedding."""
-        parts = [self.title, self.description_raw]
-        for v in self.rules_raw.values():
-            if isinstance(v, str) and v.strip():
-                parts.append(v)
-        return "\n\n".join(p for p in parts if p)
-
 
 class ExtractedRules(BaseModel):
     """Structured rule fields extracted from a market's free-form description."""

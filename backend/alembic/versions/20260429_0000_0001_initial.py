@@ -11,10 +11,7 @@ from typing import Sequence, Union
 
 import sqlalchemy as sa
 from alembic import op
-from pgvector.sqlalchemy import Vector
 from sqlalchemy.dialects import postgresql
-
-from app.config import get_settings
 
 revision: str = "0001"
 down_revision: Union[str, None] = None
@@ -23,7 +20,7 @@ depends_on: Union[str, Sequence[str], None] = None
 
 
 def upgrade() -> None:
-    op.execute("CREATE EXTENSION IF NOT EXISTS vector")
+    op.execute("CREATE EXTENSION IF NOT EXISTS pg_trgm")
 
     exchange_enum = postgresql.ENUM(
         "polymarket", "kalshi", name="exchange_enum", create_type=False
@@ -66,28 +63,8 @@ def upgrade() -> None:
         sa.UniqueConstraint("exchange", "external_id", name="uq_markets_exchange_external_id"),
     )
     op.create_index("ix_markets_status", "markets", ["status"])
-
-    settings = get_settings()
-    op.create_table(
-        "market_embeddings",
-        sa.Column(
-            "market_id",
-            postgresql.UUID(as_uuid=True),
-            sa.ForeignKey("markets.id", ondelete="CASCADE"),
-            primary_key=True,
-        ),
-        sa.Column("embedding", Vector(settings.voyage_dim), nullable=False),
-        sa.Column("model", sa.String(128), nullable=False),
-        sa.Column(
-            "created_at",
-            sa.DateTime(timezone=True),
-            nullable=False,
-            server_default=sa.func.now(),
-        ),
-    )
     op.execute(
-        "CREATE INDEX ix_market_embeddings_vec_cosine "
-        "ON market_embeddings USING ivfflat (embedding vector_cosine_ops) WITH (lists = 100)"
+        "CREATE INDEX ix_markets_title_trgm ON markets USING gin (title gin_trgm_ops)"
     )
 
     op.create_table(
@@ -139,8 +116,7 @@ def upgrade() -> None:
 def downgrade() -> None:
     op.drop_table("comparison_candidates")
     op.drop_table("comparisons")
-    op.execute("DROP INDEX IF EXISTS ix_market_embeddings_vec_cosine")
-    op.drop_table("market_embeddings")
+    op.execute("DROP INDEX IF EXISTS ix_markets_title_trgm")
     op.drop_index("ix_markets_status", table_name="markets")
     op.drop_table("markets")
     op.execute("DROP TYPE IF EXISTS comparison_status_enum")

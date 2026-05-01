@@ -21,6 +21,5 @@ async def admin_ingest(request: Request, x_admin_token: str = Header(default="")
     return {
         "polymarket": stats.polymarket,
         "kalshi": stats.kalshi,
-        "embedded": stats.embedded,
         "errors": stats.errors,
     }

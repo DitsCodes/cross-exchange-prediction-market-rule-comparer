@@ -1,4 +1,4 @@
-"""Background job that keeps Postgres+pgvector fresh with open markets from both exchanges."""
+"""Background job that keeps Postgres fresh with open markets from both exchanges."""
 
 from __future__ import annotations
 
@@ -8,13 +8,11 @@ from dataclasses import dataclass, field
 from datetime import datetime, timezone
 
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
-from sqlalchemy import select
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 
 from app.config import get_settings
 from app.db import models as m
 from app.db.base import get_session_ctx
-from app.embeddings import get_embedder
 from app.exchanges import all_sources
 from app.exchanges.base import MarketSource
 from app.schemas.market import NormalizedMarket
@@ -26,7 +24,6 @@ logger = logging.getLogger(__name__)
 class IngestStats:
     polymarket: int = 0
     kalshi: int = 0
-    embedded: int = 0
     errors: list[str] = field(default_factory=list)
     started_at: datetime = field(default_factory=lambda: datetime.now(timezone.utc))
     finished_at: datetime | None = None
@@ -95,10 +92,9 @@ class CatalogIngester:
                 stats.finished_at = datetime.now(timezone.utc)
                 self._last_stats = stats
                 logger.info(
-                    "Ingest complete: polymarket=%d kalshi=%d embedded=%d errors=%d",
+                    "Ingest complete: polymarket=%d kalshi=%d errors=%d",
                     stats.polymarket,
                     stats.kalshi,
-                    stats.embedded,
                     len(stats.errors),
                 )
             return stats
@@ -113,10 +109,9 @@ class CatalogIngester:
         total = 0
         for _ in range(self._settings.ingest_max_pages):
             page = await source.list_open(cursor=cursor, limit=page_size)
-            if not page.items:
-                break
-            await self._upsert_batch(page.items, stats)
-            total += len(page.items)
+            if page.items:
+                await self._upsert_batch(page.items, stats)
+                total += len(page.items)
             if not page.next_cursor:
                 break
             cursor = page.next_cursor
@@ -128,28 +123,19 @@ class CatalogIngester:
 
         with get_session_ctx() as session:
             now = datetime.now(timezone.utc)
-            existing_ids: dict[tuple[str, str], tuple[str, str]] = {}
-            keys = [(it.exchange, it.external_id) for it in items]
-            rows = session.execute(
-                select(m.Market.id, m.Market.exchange, m.Market.external_id, m.Market.title).where(
-                    m.Market.exchange.in_({k[0] for k in keys})
-                )
-            ).all()
-            for row in rows:
-                existing_ids[(row.exchange.value, row.external_id)] = (str(row.id), row.title)
 
             insert_payload = []
             for it in items:
                 insert_payload.append(
                     {
                         "exchange": it.exchange,
-                        "external_id": it.external_id,
-                        "slug_or_ticker": it.slug_or_ticker,
-                        "url": it.url,
-                        "title": it.title,
+                        "external_id": _fit_column(it.external_id, 255),
+                        "slug_or_ticker": _fit_column(it.slug_or_ticker, 512),
+                        "url": _fit_column(it.url, 1024),
+                        "title": _fit_column(it.title, 1024),
                         "description_raw": it.description_raw,
                         "rules_raw": it.rules_raw,
-                        "resolution_source": it.resolution_source,
+                        "resolution_source": _fit_column(it.resolution_source, 512),
                         "expiration_ts": it.expiration_ts,
                         "status": it.status if it.status in {"open", "closed", "resolved", "unknown"} else "unknown",
                         "last_synced_at": now,
@@ -170,61 +156,18 @@ class CatalogIngester:
                     "status": stmt.excluded.status,
                     "last_synced_at": stmt.excluded.last_synced_at,
                 },
-            ).returning(m.Market.id, m.Market.exchange, m.Market.external_id, m.Market.title)
+            )
 
-            inserted = session.execute(stmt).all()
-            session.commit()
+            try:
+                session.execute(stmt)
+                session.commit()
+            except Exception as e:
+                session.rollback()
+                stats.errors.append(f"upsert: {e!r}")
+                logger.exception("Catalog upsert failed for batch of %d markets", len(items))
 
-            id_by_key = {(row.exchange.value, row.external_id): str(row.id) for row in inserted}
 
-            to_embed: list[NormalizedMarket] = []
-            ids: list[str] = []
-            for it in items:
-                key = (it.exchange, it.external_id)
-                mid = id_by_key.get(key)
-                if not mid:
-                    continue
-                prev_title = existing_ids.get(key, (None, None))[1]
-                if prev_title is None or prev_title != it.title:
-                    to_embed.append(it)
-                    ids.append(mid)
-
-            await self._embed_and_store(session, ids, to_embed, stats)
-
-    async def _embed_and_store(
-        self,
-        session,
-        market_ids: list[str],
-        markets: list[NormalizedMarket],
-        stats: IngestStats,
-    ) -> None:
-        if not markets or not self._settings.voyage_api_key:
-            return
-        embedder = get_embedder()
-        texts = [mkt.embedding_text() for mkt in markets]
-        try:
-            vectors = await embedder.embed_documents(texts)
-        except Exception as e:
-            logger.warning("Embedding batch failed: %s", e)
-            stats.errors.append(f"embed: {e!r}")
-            return
-
-        rows = [
-            {
-                "market_id": mid,
-                "embedding": vec,
-                "model": self._settings.voyage_model,
-            }
-            for mid, vec in zip(market_ids, vectors)
-        ]
-        stmt = pg_insert(m.MarketEmbedding).values(rows)
-        stmt = stmt.on_conflict_do_update(
-            index_elements=["market_id"],
-            set_={
-                "embedding": stmt.excluded.embedding,
-                "model": stmt.excluded.model,
-            },
-        )
-        session.execute(stmt)
-        session.commit()
-        stats.embedded += len(rows)
+def _fit_column(value: str | None, max_length: int) -> str | None:
+    if value is None:
+        return None
+    return value[:max_length]

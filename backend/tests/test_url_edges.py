@@ -20,6 +20,8 @@ from app.exchanges.polymarket import PolymarketSource
         ("https://polymarket.com/event/election-2028/will-x-win", "will-x-win"),
         ("https://polymarket.com/event/election-2028", "election-2028"),
         ("https://polymarket.com/event/election-2028/will-x-win?tid=abc#anchor", "will-x-win"),
+        ("https://polymarket.com/markets/foo-bar-2026", "foo-bar-2026"),
+        ("https://www.polymarket.com/markets/foo-bar-2026", "foo-bar-2026"),
     ],
 )
 def test_polymarket_url_shapes(url: str, slug: str):

@@ -37,6 +37,37 @@ def _parse_iso(value: str | None) -> datetime | None:
             return None
 
 
+def _is_gamma_market_id(identifier: str) -> bool:
+    """True if `identifier` looks like a Gamma /markets/{id} key (not a slug string)."""
+    s = identifier.strip()
+    if not s:
+        return False
+    if s.startswith("0x") and len(s) >= 12:
+        return all(c in "0123456789abcdefABCDEF" for c in s[2:])
+    return s.isdigit()
+
+
+def _first_market_dict(data: Any) -> dict[str, Any] | None:
+    if isinstance(data, list):
+        if not data:
+            return None
+        first = data[0]
+        return first if isinstance(first, dict) else None
+    if isinstance(data, dict):
+        return data
+    return None
+
+
+def _pick_market_from_list(items: list[Any], slug: str) -> dict[str, Any] | None:
+    for m in items:
+        if isinstance(m, dict) and m.get("slug") == slug:
+            return m
+    for m in items:
+        if isinstance(m, dict):
+            return m
+    return None
+
+
 def _normalize(raw: dict[str, Any]) -> NormalizedMarket:
     slug = raw.get("slug") or ""
     return NormalizedMarket(
@@ -73,9 +104,12 @@ class PolymarketSource(MarketSource):
             raise UnsupportedURLError(f"Polymarket URL has no path: {url}")
         # Common shapes:
         #   /market/{slug}
+        #   /markets/{slug}               (some frontend URLs use plural)
         #   /event/{event-slug}/{market-slug}
         #   /event/{event-slug}            (event-only; we use the event slug as best-effort)
         if parts[0] == "market" and len(parts) >= 2:
+            return parts[1]
+        if parts[0] == "markets" and len(parts) >= 2:
             return parts[1]
         if parts[0] == "event":
             return parts[2] if len(parts) >= 3 else parts[1]
@@ -108,19 +142,64 @@ class PolymarketSource(MarketSource):
     )
     async def fetch(self, identifier: str) -> NormalizedMarket:
         client = await self._get_client()
-        # Try slug first, then fall back to id.
-        for path in (f"/markets/slug/{identifier}", f"/markets/{identifier}"):
-            resp = await client.get(path)
+        ident = identifier.strip()
+
+        async def market_from_response(resp: httpx.Response) -> NormalizedMarket | None:
             if resp.status_code == 404:
-                continue
+                return None
             resp.raise_for_status()
-            data = resp.json()
-            if isinstance(data, list):
-                if not data:
-                    continue
-                data = data[0]
-            return _normalize(data)
-        raise MarketNotFoundError(f"Polymarket market not found: {identifier}")
+            raw = _first_market_dict(resp.json())
+            return _normalize(raw) if raw else None
+
+        # 1) Canonical slug path (Gamma docs: GET /markets/slug/{slug})
+        resp = await client.get(f"/markets/slug/{ident}")
+        if resp.status_code != 404:
+            m = await market_from_response(resp)
+            if m is not None:
+                return m
+
+        # 2) Query form (same docs: GET /markets?slug=...)
+        resp = await client.get("/markets", params={"slug": ident, "limit": 10})
+        if resp.status_code == 200:
+            body = resp.json()
+            if isinstance(body, list):
+                picked = _pick_market_from_list(body, ident)
+                if picked:
+                    return _normalize(picked)
+
+        # 3) Event slug — multi-outcome pages; market slug endpoint may 404
+        resp = await client.get(f"/events/slug/{ident}")
+        if resp.status_code == 200:
+            ev = resp.json()
+            if isinstance(ev, dict):
+                mkts = ev.get("markets")
+                if isinstance(mkts, list) and mkts:
+                    picked = _pick_market_from_list(mkts, ident)
+                    raw = picked or (mkts[0] if isinstance(mkts[0], dict) else None)
+                    if raw:
+                        return _normalize(raw)
+        elif resp.status_code not in (404,):
+            resp.raise_for_status()
+
+        resp = await client.get("/events", params={"slug": ident, "limit": 5})
+        if resp.status_code == 200:
+            evs = resp.json()
+            if isinstance(evs, list) and evs and isinstance(evs[0], dict):
+                mkts = evs[0].get("markets")
+                if isinstance(mkts, list) and mkts:
+                    picked = _pick_market_from_list(mkts, ident)
+                    raw = picked or (mkts[0] if isinstance(mkts[0], dict) else None)
+                    if raw:
+                        return _normalize(raw)
+
+        # 4) Only /markets/{id} for real Gamma ids — slugs yield 422 Unprocessable Entity
+        if _is_gamma_market_id(ident):
+            resp = await client.get(f"/markets/{ident}")
+            m = await market_from_response(resp)
+            if m is not None:
+                return m
+
+        raise MarketNotFoundError(f"Polymarket market not found: {ident}")
 
     @retry(
         stop=stop_after_attempt(3),

@@ -6,7 +6,6 @@ import enum
 import uuid
 from datetime import datetime, timezone
 
-from pgvector.sqlalchemy import Vector
 from sqlalchemy import (
     JSON,
     DateTime,
@@ -22,7 +21,6 @@ from sqlalchemy import (
 from sqlalchemy.dialects.postgresql import UUID as PG_UUID
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
-from app.config import get_settings
 from app.db.base import Base
 
 
@@ -79,38 +77,6 @@ class Market(Base):
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), nullable=False
     )
-
-    embedding: Mapped["MarketEmbedding | None"] = relationship(
-        back_populates="market", uselist=False, cascade="all, delete-orphan"
-    )
-
-
-class MarketEmbedding(Base):
-    __tablename__ = "market_embeddings"
-    __table_args__ = (
-        Index(
-            "ix_market_embeddings_vec_cosine",
-            "embedding",
-            postgresql_using="ivfflat",
-            postgresql_with={"lists": 100},
-            postgresql_ops={"embedding": "vector_cosine_ops"},
-        ),
-    )
-
-    market_id: Mapped[uuid.UUID] = mapped_column(
-        PG_UUID(as_uuid=True),
-        ForeignKey("markets.id", ondelete="CASCADE"),
-        primary_key=True,
-    )
-    embedding: Mapped[list[float]] = mapped_column(
-        Vector(get_settings().voyage_dim), nullable=False
-    )
-    model: Mapped[str] = mapped_column(String(128), nullable=False)
-    created_at: Mapped[datetime] = mapped_column(
-        DateTime(timezone=True), server_default=func.now(), nullable=False
-    )
-
-    market: Mapped[Market] = relationship(back_populates="embedding")
 
 
 class Comparison(Base):

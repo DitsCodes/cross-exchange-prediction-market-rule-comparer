@@ -73,7 +73,13 @@ def test_markets_route_uses_adapter(client: TestClient) -> None:
 def test_markets_route_404_passes_through(client: TestClient) -> None:
     with respx.mock(base_url="https://gamma-api.polymarket.com") as r:
         r.get("/markets/slug/missing").mock(return_value=httpx.Response(404))
-        r.get("/markets/missing").mock(return_value=httpx.Response(404))
+        r.get("/markets", params={"slug": "missing", "limit": 10}).mock(
+            return_value=httpx.Response(200, json=[])
+        )
+        r.get("/events/slug/missing").mock(return_value=httpx.Response(404))
+        r.get("/events", params={"slug": "missing", "limit": 5}).mock(
+            return_value=httpx.Response(200, json=[])
+        )
         resp = client.get("/api/v1/markets/polymarket/missing")
     assert resp.status_code == 404
 

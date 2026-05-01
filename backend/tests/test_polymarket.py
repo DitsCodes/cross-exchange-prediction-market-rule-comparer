@@ -55,6 +55,63 @@ async def test_fetch_normalizes_market():
 
 
 @pytest.mark.asyncio
+async def test_fetch_falls_back_to_markets_slug_query():
+    sample = {
+        "id": "99",
+        "conditionId": "0xabc",
+        "slug": "wti-may-2026",
+        "question": "WTI price band?",
+        "description": "desc",
+        "resolutionSource": "NYMEX",
+        "endDate": "2026-05-31T23:59:59Z",
+        "active": True,
+        "closed": False,
+    }
+    with respx.mock(base_url="https://gamma-api.polymarket.com") as r:
+        r.get("/markets/slug/wti-may-2026").mock(return_value=httpx.Response(404))
+        r.get("/markets", params={"slug": "wti-may-2026", "limit": 10}).mock(
+            return_value=httpx.Response(200, json=[sample])
+        )
+        source = PolymarketSource()
+        try:
+            market = await source.fetch("wti-may-2026")
+        finally:
+            await source.aclose()
+    assert market.slug_or_ticker == "wti-may-2026"
+    assert market.external_id == "0xabc"
+
+
+@pytest.mark.asyncio
+async def test_fetch_uses_numeric_id_path_not_slug():
+    sample = {
+        "id": "12345",
+        "conditionId": "0xc0ffee",
+        "slug": "some-slug",
+        "question": "By id?",
+        "description": "",
+        "active": True,
+        "closed": False,
+        "endDate": "2026-12-31T00:00:00Z",
+    }
+    with respx.mock(base_url="https://gamma-api.polymarket.com") as r:
+        r.get("/markets/slug/12345").mock(return_value=httpx.Response(404))
+        r.get("/markets", params={"slug": "12345", "limit": 10}).mock(
+            return_value=httpx.Response(200, json=[])
+        )
+        r.get("/events/slug/12345").mock(return_value=httpx.Response(404))
+        r.get("/events", params={"slug": "12345", "limit": 5}).mock(
+            return_value=httpx.Response(200, json=[])
+        )
+        r.get("/markets/12345").mock(return_value=httpx.Response(200, json=sample))
+        source = PolymarketSource()
+        try:
+            market = await source.fetch("12345")
+        finally:
+            await source.aclose()
+    assert market.external_id == "0xc0ffee"
+
+
+@pytest.mark.asyncio
 async def test_list_open_paginates():
     page1 = [
         {
